@@ -1,15 +1,17 @@
-import Data.List(tails, nub, group, delete, foldl', intersect, inits, permutations, groupBy, isInfixOf, (\\), sortBy, elemIndex)
+import Data.List(tails, nub, group, delete, foldl', intersect, inits, permutations, groupBy, isInfixOf, (\\), sortBy, elemIndex, find)
+import Data.Array
 import Data.Function (on)
 import Numeric
 import Data.Time.Calendar(fromGregorian, toGregorian)
 import Data.Time.Calendar.WeekDate(toWeekDate)
-import Char(digitToInt,ord,toUpper,intToDigit,chr)
-import System.IO(readFile,FilePath)
+import Char(digitToInt, ord, toUpper, intToDigit, chr, isDigit)
+import System.IO(readFile, FilePath)
 import List(sort, maximumBy, minimumBy)
 import Data.Ratio
 import Data.Bits(xor)
 import Maybe
 import Debug.Trace
+import Data.Number.MPFR as M(RoundMode (Near), toString, sqrtw)
 
 isPrime 2 = True
 isPrime n = length (trialDiv n) == 1
@@ -626,7 +628,10 @@ pyTriples top
         gcd m n == 1]
 
 pythagoreanTriplets'' n
-    = [ [x,y,z] | x <- [1..n-2], y <- [1..(min (n/2) (x-1))], z <- [n - x - y], x^2 + y^2 == z^2]
+    = [ [round x,round y,round z] | x <- [1..n-2],
+                                    y <- [1..(min (n/2) (x-1))],
+                                    z <- [n - x - y],
+                                    x^2 + y^2 == z^2]
 
 problem39
     = snd . maximum . map (\x -> ((length . pythagoreanTriplets'') x,x)) $ [12,14..1000]
@@ -1284,7 +1289,8 @@ problem68
     = maximum . map nGonDigits $ magic5gon
 
 phi n
-    = numerator . ((n%1)*) . product . map (\x -> 1 - (1%x)) . nub . factors . numerator $ n%1
+    = numerator . ((n%1)*) . product . map (\x -> 1 - (1%x)) . nub
+      . factors . numerator $ n%1
 
 problem69
     = foldl' (\x y -> maximumBy (compare `on` fn) [x,y]) 1
@@ -1343,5 +1349,263 @@ problem70'
                 flsqr n x = x < (floor . sqrt . fromInteger) n
                 f (x,px) = fromIntegral x / (fromIntegral px)
 
+fractionLeftOf target divisor limit best
+    | divisor == limit = bestOfThisRound
+    | otherwise = fractionLeftOf target (divisor+1) limit bestOfThisRound
+    where
+        bestOfThisRound = maximum (best : candidates)
+        candidates = [n % d | d <- [divisor], n <- [1..divisor-1],
+                      gcd n d == 1, (n%d) < target, (n%d) > best]
+
+fractionLeftOf' target divisor dLimit bestN bestD
+    | divisor == dLimit = bestOfThisRound
+    | otherwise = fractionLeftOf' target (divisor+1) dLimit newBestN newBestD
+    where
+        newBestN = numerator bestOfThisRound
+        newBestD = denominator bestOfThisRound
+        bestOfThisRound = maximum (bestN%bestD : candidates)
+        nLimit = ceiling (fromIntegral divisor * target)
+        candidates = [n % d | d <- [divisor],
+                      n <- [bestN..nLimit],
+                      gcd n d == 1, (n%d) < target, (n%d) > (bestN%bestD)]
+
+fractionLeftOf'' target divisor dLimit best
+    | divisor > dLimit = best
+    | candidate > best && candidate < target = fractionLeftOf'' target (divisor+1) dLimit candidate
+    | otherwise = fractionLeftOf'' target (divisor+1) dLimit best
+    where
+        candidate = floor (fromIntegral divisor * target) % divisor
+
+problem71
+    = fractionLeftOf'' (3%7) 2 1000000 0
+
+rpfList n
+    = [ x%y | y <- [2..n], x <- [1..y], gcd x y == 1]
+
+problem72
+    = foldl' (\x y -> x + (phi y)) 0 [2..1000000]
+
+rpfBetween low high max
+    = [ x%y | y <- [2..max], x <- [1..y], gcd x y == 1, x%y > low, x%y < high ]
+
+rpfBetween' min max limit current
+    | current > limit = []
+    | otherwise = [ x%y | y <- [current],
+                          x <- [currentMin..currentMax],
+                          gcd x y == 1 ]
+                  ++ rpfBetween' min max limit (current+1)
+    where
+        currentMin = ceiling $ current * 1%3
+        currentMax = floor $ current * 1%2
+
+problem73
+    = length $ rpfBetween' (1%3) (1%2) 12000 4
+
+facDigitalSum :: Int -> Int
+facDigitalSum = sum . map (fac . digitToInt) . show
+
+fdsLoopLength n
+    = buildLoop [] n
+    where
+        buildLoop acc n 
+            | n `elem` acc = length acc
+            | otherwise = buildLoop (n:acc) next
+            where
+                next = facDigitalSum n
+
+problem74
+    = length . filter ((==60) . fdsLoopLength) $ [1..1000000]
+
+pythagoreanTriples n d
+    = sort [sideA, sideB, sideC] : pythagoreanTriples (n+1) (d+2)
+    where
+        improperRatio = (n % 1) + (n % d)
+        sideA = numerator $ improperRatio
+        sideB = denominator $ improperRatio
+        sideC = round . sqrt . fromIntegral $ (sideA^2 + sideB^2)
+
+primitivePythagoreanTriples depth
+    = ppt' depth [[3,4,5]]
+    where
+        ppt' d lst 
+            | d > 0 = lst ++ (ppt' (d-1) (concatMap next lst))
+            | otherwise = lst
+        next x = [trans1 x, trans2 x, trans3 x]
+        trans1 (a:b:c:[]) = [a - 2*b + 2*c, 2*a - b + 2*c, 2*a - 2*b + 3*c]
+        trans2 (a:b:c:[]) = [a + 2*b + 2*c, 2*a + b + 2*c, 2*a + 2*b + 3*c]
+        trans3 (a:b:c:[]) = [-a + 2*b + 2*c, -2*a + b + 2*c, -2*a + 2*b + 3*c]
+
+primitivePythagoreanTriples' depth max
+    = ppt' depth [[3,4,5]]
+    where
+        ppt' d lst 
+            | d > 0 = lst ++ 
+                      (ppt' (d-1) (filter ((<=max) . sum) (concatMap next lst)))
+            | otherwise = lst
+        next x = [trans1 x, trans2 x, trans3 x]
+        trans1 (a:b:c:[]) = [a - 2*b + 2*c, 2*a - b + 2*c, 2*a - 2*b + 3*c]
+        trans2 (a:b:c:[]) = [a + 2*b + 2*c, 2*a + b + 2*c, 2*a + 2*b + 3*c]
+        trans3 (a:b:c:[]) = [-a + 2*b + 2*c, -2*a + b + 2*c, -2*a + 2*b + 3*c]
+
+problem75
+    = length . filter ((==1) . length) . groupBy ((==) `on` sum) .
+      sortBy (compare `on` sum) $ allpts
+    where
+        ppts = filter ((<=1500000) . sum) .
+               primitivePythagoreanTriples' 610 $ 1500000
+        allpts = concatMap (takeWhile ((<=1500000) . sum) . 
+                 zipWith (\x y -> map (*x) y) [1..] . repeat) $ ppts
+
+--      2 3 4 5 6  7  8  9  10 11 12 13  14  15  16
+ways = [1,2,4,6,10,14,21,29,41,55,76,100,134,175,230]
+
+countPossibleSums n
+    = [ x:(next x y) | x <- reverse [1..(n-1)], y <- [1..min (n-x) x]]
+    where
+        next acc cur
+            | n-acc == 0 = []
+            | otherwise = choice : next (acc+choice) choice
+            where
+                choice = min cur (n-acc)
+
+countPossibleSums' limit acc cur
+    | limit - acc <= 0 = [[]]
+    | otherwise = [ x:y | x <- reverse [1..cur],
+                          y <- countPossibleSums' limit (acc+x) 
+                                                  (max 1 (min (limit-(acc+x)) x))]
+
+countPossibleSums'' [] 0 = [[]]
+countPossibleSums'' [] _ = []
+countPossibleSums'' (x:xs) n 
+    | x > n = countPossibleSums'' xs n
+    | otherwise = map (x:) (countPossibleSums'' (x:xs) (n-x)) ++ 
+                  countPossibleSums'' xs n
+
+partitions n = countPossibleSums'' (reverse [1..n]) n
+
+countPossibleSums''' n
+    = cps n (n-1)
+    where
+        cps 0 _ = 1
+        cps _ 0 = 1
+        cps n m = sum $ map (\x -> biglist !! (n-x) !! min (n-x) x) [1..m]
+        biglist = [[ cps n m | m <- [0..n]] | n <- [0..]]
+
+problem76
+    = countPossibleSums''' 100
+    {-= length $ partitions 100-}
+    {-= (length $ countPossibleSums' 100 0 100) - 1-}
+
+countPrimeSums n
+    = filter ((==n) . sum) $ cps n 0 n
+    where
+        cps limit acc cur
+            | limit - acc <= 0 = [[]]
+            | otherwise = [ x:y | x <- reverse (takeWhile (<=cur) primes),
+                                  y <- cps limit (acc+x)
+                                           (max 2 (min (limit-(acc+x)) x))]
+
+problem77
+    = (+1) . length . takeWhile (<5000) . map (length . countPrimeSums) $ [1..]
+
+partitionGF n
+    | n < 0 = 0
+    | n == 0 = 1
+    | otherwise = sum $ map 
+                        (\x -> (-1)^(x-1) * 
+                        (partitionGF(n - floor (fromIntegral(x*(3*x-1))/2)) +
+                         partitionGF(n - floor (fromIntegral(x*(3*x+1))/2))))
+                        [1..n]
+
+partitionPNT
+    = 1 : map (next 0 (-1) 0 partitionPNT) [1..]
+    where
+        next r f i lst n
+            | k > n = r
+            | otherwise = next newR newF (i+1) lst n
+            where
+                k = gen_pentagonal(i)
+                newF 
+                    | even i = -f
+                    | otherwise = f
+                newR = r + newF * (lst !! (n - k))
+        pentagonal n
+            = n * (3 * n - 1) `div` 2
+        gen_pentagonal n
+            | n < 0 = 0
+            | n `mod` 2 == 0 = pentagonal (n `div` 2 + 1)
+            | otherwise = pentagonal (-(n `div` 2 + 1))
+
+partitionPNT' 0 = 1
+partitionPNT' 1 = 1
+partitionPNT' n
+    = next 0 (-1) 0 n
+    where
+        next r f i n
+            | k > n = r
+            | otherwise = next newR newF (i+1) n
+            where
+                k = gen_pentagonal(i)
+                newF 
+                    | even i = -f
+                    | otherwise = f
+                newR = r + newF * (partitionPNT'' !! (n-k))
+        pentagonal n
+            = n * (3 * n - 1) `div` 2
+        gen_pentagonal n
+            | n < 0 = 0
+            | n `mod` 2 == 0 = pentagonal (n `div` 2 + 1)
+            | otherwise = pentagonal (-(n `div` 2 + 1))
+
+partitionPNT'' = map partitionPNT' [0..]
+
+notMyPartition 
+    = [ a ! n | n <- [1..l] ]
+    where
+        l = 100000
+        a = array (0,l) $ take (l+1) $ zip [0..] [ p n | n <- [0..]]
+        p 0 = 1
+        p 1 = 1
+        p 2 = 2
+        p n = sum $ zipWith (*) signs [ a!(n-k) | k <- takeWhile (<= n) pentagonals]
+        signs = 1:1:(-1):(-1):signs
+        pentagonals 
+            = [ n*(3*n-1) `div` 2 | n <- s]
+            where
+                s = interleave [1..] [ -n | n <- [1..] ]
+                interleave (h1:t1) (h2:t2) = h1:h2:interleave t1 t2
+
+problem78
+    = length . takeWhile (\x -> x `mod` 1000000 /= 0) $ partitionPNT
+
+problem79 = do
+    keylog <- readFile "keylog.txt"
+    let keyCodes = map (map digitToInt) . lines . filter (/= '\r') $ keylog
+        keys = nub . concat $ keyCodes
+        relations = nub . concat . map rightRelations $ keyCodes
+    return . map intToDigit $ reconstructCode keys relations
+    where
+        rightRelations (x:y:z:[])
+            = (z, y) : (z, x) : (y, x) : []
+        reconstructCode [] _ = []
+        reconstructCode digits relations
+            = leftMost : reconstructCode remainingDigits remainingRelations
+            where
+                leftMost = head . filter (`notElem` (remainingDigits)) $ digits
+                remainingDigits = nub . map fst $ relations
+                remainingRelations = filter ((/= leftMost) . snd) relations
+
+sumSqrtDigits n
+    = digitalSum . take 100 . filter isDigit .
+      toString 110 . M.sqrtw M.Near 1000 $ n
+    where
+        digitalSum = sum . map digitToInt
+
+digitalSum = sum . map digitToInt . take 100 . filter isDigit
+
+problem80
+    = sum . map sumSqrtDigits $ [1..100] \\ map (^2) [1..10]
+
+-- Changing main function to run complied version of current problem.
 main = do
-    print $ problem70
+    print $ find (\(n,p) -> p `mod` 1000000 == 0) $ zip [1..] notMyPartition
