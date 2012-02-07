@@ -1606,6 +1606,88 @@ digitalSum = sum . map digitToInt . take 100 . filter isDigit
 problem80
     = sum . map sumSqrtDigits $ [1..100] \\ map (^2) [1..10]
 
+tilt lst
+    = map (map lookup) $ [ [ (x,y) | x <- [0..maxX],
+                                     y <- [0..maxY],
+                                     x+y == z]
+                           | z <- [0..(maxX+maxY)] ]
+    where
+        lookup (x,y) = lst !! y !! x
+        maxY = length lst - 1
+        maxX = (length . head $ lst) - 1
+
+pad10000 lst
+    = front ++ map padOut back
+    where
+        (front, back) = splitAt 80 lst
+        padOut lst
+            = replicate numPad 10000 ++ lst ++ replicate numPad 10000
+            where
+                numPad = 80 - (length lst)
+
+notMyProblem81 = do
+    contents <- readFile "matrix1.txt"
+    let arr = to2DArray $ readNodes $ contents
+    print $ arr ! (80,80)
+    where
+        maxSize = 80
+        indexes = [ (y,x) | y <- [1..maxSize], x <- [1..maxSize] ]
+        validIndex (a, b) = a >= 1 && b >=1
+        to2DArray xs = a
+            where
+                a = array ((1,1),(80,80)) 
+                    $ zipWith (\i@(y,x) v -> (i, minSum a i v)) indexes xs
+        minSum arr (y,x) v = v + m
+            where
+                paths = filter validIndex [(y-1, x), (y, x-1)]
+                m = if (null paths) then 0 else minimum $ map (arr !) $ paths
+        readNodes = concat . map (map (toInteger . read) . splitBy ',') . lines
+
+problem81 = do
+    matrix <- readFile "matrix.txt"
+    let matrix' = map (map read . splitBy ',') . lines . filter (/= '\r') $ matrix
+        answer = foldr1 reduce (pad10000 . tilt $ matrix')
+    return answer
+    where
+        reduce a b = zipWith (+) a (zipWith min b (tail b))
+        solve lst x y sum
+            | x == 0 && y == 0 = sum
+            | up < left || x == 0 = solve lst x (max 0 (y-1)) (up + sum)
+            | otherwise = solve lst (max 0 (x-1)) y (left + sum)
+            where
+                up | y > 0 = lst !! (y-1) !! x
+                   | otherwise = left
+                left | x > 0 = lst !! y !! (x-1)
+                     | otherwise = up
+
+problem82 = do
+    matrix <- readFile "matrix1.txt"
+    let matrix' = readCSL matrix :: [[Integer]]
+        answer = bestPath matrix'
+    return answer
+    where
+        readCSL = map (map read . splitBy ',') . lines . filter (/= '\r')
+        bestPath xs
+            = matrixArray
+            where
+                maxSize = length xs
+                indexes = [ (y,x) | y <- [1..maxSize], x <- [1..maxSize] ]
+                matrixArray = array ((1,1) , (maxSize, maxSize)) $
+                              zipWith (\i@(y,x) v -> ((x,y), 
+                                                      v))
+                              indexes (concat xs)
+                validIndex (x,y) = x >= 1 && y >= 1 &&
+                                   x <= maxSize && y <= maxSize
+                minSum arr (x,y) v 
+                    | x == 1 = v
+                    | otherwise = trace (show (x,y)) v + m
+                    where
+                        paths = filter validIndex [(x,y+1), (x-1,y), (x,y-1)]
+                        m | null paths = 0
+                          | otherwise = minimum . map (arr !) $ paths 
+                
+        
+
 -- Changing main function to run complied version of current problem.
 main = do
     print $ find (\(n,p) -> p `mod` 1000000 == 0) $ zip [1..] notMyPartition
