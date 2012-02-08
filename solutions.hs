@@ -1661,14 +1661,15 @@ problem81 = do
                      | otherwise = up
 
 problem82 = do
-    matrix <- readFile "matrix1.txt"
+    matrix <- readFile "matrix.txt"
     let matrix' = readCSL matrix :: [[Integer]]
         answer = bestPath matrix'
     return answer
     where
         readCSL = map (map read . splitBy ',') . lines . filter (/= '\r')
         bestPath xs
-            = matrixArray
+            = map (\x -> minWalk matrixArray x x) . range 
+              $ ((maxSize,1), (maxSize,maxSize))
             where
                 maxSize = length xs
                 indexes = [ (y,x) | y <- [1..maxSize], x <- [1..maxSize] ]
@@ -1677,7 +1678,7 @@ problem82 = do
                                                       v))
                               indexes (concat xs)
                 validIndex (x,y) = x >= 1 && y >= 1 &&
-                                   x <= maxSize && y <= maxSize
+                                   x < maxSize && y <= maxSize
                 minSum arr (x,y) v 
                     | x == 1 = v
                     | otherwise = trace (show (x,y)) v + m
@@ -1685,7 +1686,14 @@ problem82 = do
                         paths = filter validIndex [(x,y+1), (x-1,y), (x,y-1)]
                         m | null paths = 0
                           | otherwise = minimum . map (arr !) $ paths 
-                
+                minWalk arr lastIndex (x,y) 
+                    | x == 1 = current
+                    | otherwise = current + (minWalk arr (x,y) minPath) 
+                    where
+                        current = arr ! (x,y)
+                        paths = filter validIndex 
+                                $ [(x,y+1), (x-1,y), (x,y-1)] \\ [lastIndex]
+                        minPath = minimumBy (compare `on` (arr !)) paths
         
 
 -- Changing main function to run complied version of current problem.
